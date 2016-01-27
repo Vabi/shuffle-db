@@ -395,8 +395,8 @@ def make_playback_state(volume=None):
 def make_stats(count):
   log("Creating statistics file ...",False)
   try:
-    open("iPod_Control/iTunes/iTunesStats","wb").write(\
-         stringval(count)+"\0"*3+(stringval(18)+"\xff"*3+"\0"*12)*count)
+    string=stringval(count)+"\0"*3+(stringval(18)+"\xff"*3+"\0"*12)*count
+    open("iPod_Control/iTunes/iTunesStats","wb").write(string.encode('ISO-8859-1'))
   except IOError:
     log("FAILED.")
     return 0
@@ -456,7 +456,8 @@ def make_shuffle(count):
     seq=list(range(count))
     random.shuffle(seq)
   try:
-    open("iPod_Control/iTunes/iTunesShuffle","wb").write("".join(map(stringval,seq)))
+    string="".join(map(stringval,seq))
+    open("iPod_Control/iTunes/iTunesShuffle","wb").write(string.encode('ISO-8859-1'))
   except IOError:
     log("FAILED.")
     return 0
