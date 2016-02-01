@@ -16,11 +16,16 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 __title__="KeyJ's iPod shuffle Database Builder"
-__version__="1.0-rc1"
+__version__="0.2-py3"
 __author__="Martin Fiedler"
 __email__="martin.fiedler@gmx.net"
 
 """ VERSION HISTORY
+0.2-py3
+    * issues with ubuntu 14.04 python3 resolved 
+      (problems with % string formatting)
+0.1-py3
+    * first working python3 version
 1.0-rc1 (2006-04-26)
     * finally(!) added the often-requested auto-rename feature (-r option)
 0.7-pre1 (2005-06-09)
@@ -64,7 +69,7 @@ __email__="martin.fiedler@gmx.net"
 """
 
 
-import sys,os,os.path,array,getopt,random,types,fnmatch,operator,string,eyed3
+import sys,os,os.path,array,getopt,random,types,fnmatch,operator,string
 from functools import reduce
 
 KnownProps=('filename','size','ignore','type','shuffle','reuse','bookmark')
@@ -101,7 +106,7 @@ def open_log():
   global logfile
   if Options['logging']:
     try:
-      logfile=file(Options['logfile'],"w")
+      logfile=open(Options['logfile'],"w")
     except IOError:
       logfile=None
   else:
@@ -180,7 +185,7 @@ def ParseRule(rule):
   return (prop,rule[sep_pos],ParseValue(rule[sep_pos+1:].strip()))
 
 def ParseAction(action):
-  prop,value=list(map(string.strip,action.split('=',1)))
+  prop,value=list(map(str.strip,action.split('=',1)))
   if not prop in KnownProps:
     log("WARNING: unknown property `%s'"%prop)
   return (prop,ParseValue(value))
@@ -192,7 +197,7 @@ def ParseRuleLine(line):
   try:
     # split line into "ruleset: action"
     tmp=line.split(":")
-    ruleset=list(map(string.strip,":".join(tmp[:-1]).split(",")))
+    ruleset=list(map(str.strip,":".join(tmp[:-1]).split(",")))
     actions=dict(list(map(ParseAction,tmp[-1].split(","))))
     if len(ruleset)==1 and not(ruleset[0]):
       return ([],actions)
@@ -226,7 +231,7 @@ def rename_safely(path,name):
   try:
     os.rename("%s/%s"%(path,name),"%s/%s"%(path,newname))
   except OSError:
-    pass  # don't fail if the rename didn't work
+    pass  # don't fail if the rename didn't workp
   return newname
 
 
@@ -254,13 +259,13 @@ def write_to_db(filename):
   entry=props['reuse'] and (filename in KnownEntries) and KnownEntries[filename]
   if not entry:
     header[29]=props['type']
-    entry=header.tostring()+ \
-      "".join([c+"\0" for c in filename[:261]])+ \
-      "\0"*(525-2*len(filename))
+    entry=header.tostring().decode('ISO-8859-1')+ \
+       "".join(c+"\0" for c in filename[:261])+ \
+       "\0"*(525-2*len(filename))
 
   # write entry, modifying shuffleflag and bookmarkflag at least
-  log("=> %s"%(filename))
-  iTunesSD.write(entry[:555]+chr(props['shuffle'])+chr(props['bookmark'])+entry[557])
+  entry=entry[:555]+chr(props['shuffle'])+chr(props['bookmark'])+entry[557]
+  iTunesSD.write(entry.encode('ISO-8859-1'))
   if props['shuffle']: domains[-1].append(total_count)
   total_count+=1
   return 1
@@ -276,21 +281,6 @@ def make_key(s):
     if not s[j].isdigit(): break
   if s[j].isdigit(): j+=1
   return (s[:i],int(s[i:j]),make_key(s[j:]))
-
-def key_repr(x):
-  if type(x)==tuple:
-    return "%s%d%s"%(x[0],x[1],key_repr(x[2]))
-  else:
-    return x
-
-def cmp_key(a,b):
-  if type(a)==tuple and type(b)==tuple:
-    if (a[3]==-1 or b[3]==-1):
-      return cmp(a[0],b[0]) or cmp(a[1],b[1]) or cmp_key(a[2],b[2])
-    else:
-      return cmp(a[4]*100+a[3],b[4]*100+b[3])
-  else:
-    return cmp(key_repr(a),key_repr(b))
 
 
 def file_entry(path,name,prefix=""):
@@ -347,34 +337,14 @@ def browse(path, interactive):
         files.extend([x for x in [file_entry(subpath,name,dir+"/") for name in os.listdir(subpath)] if x and x[0]])
       except OSError:
         pass
- 
-  newfiles=[] 
-  for file in files:
-    if file[0]==1:
-      audiofile=eyed3.load("%s/%s"%(path, file[2]))
-      if not audiofile.tag is None and not audiofile.tag.track_num is None:
-        track_num=audiofile.tag.track_num[0]
-      else:
-        track_num=-1
-      if not audiofile.tag is None and not audiofile.tag.disc_num is None:
-        disk_num=audiofile.tag.disc_num[0]
-      else:
-        disk_num=1
-    else:
-      track_num=-2
-      disk_num=0
-    newfile=(file[0], file[1], file[2], track_num, disk_num)
-    newfiles.append(newfile)
- 
-  files=newfiles 
-  files.sort(cmp_key)
+
+  files.sort()
   count=len([None for x in files if x[0]])
   if count: domains.append([])
 
   real_count=0
   for item in files:
     fullname="%s/%s"%(path,item[2])
-    #log("=> %s: Disk #%d, Track #%d"%(fullname, item[4], item[3]))
     if item[0]:
       real_count+=write_to_db(fullname[1:])
     else:
@@ -404,7 +374,7 @@ def make_playback_state(volume=None):
   log("Setting playback state ...",False)
   PState=[]
   try:
-    f=file("iPod_Control/iTunes/iTunesPState","rb")
+    f=open("iPod_Control/iTunes/iTunesPState","rb")
     a=array.array('B')
     a.fromstring(f.read())
     PState=a.tolist()
@@ -417,7 +387,7 @@ def make_playback_state(volume=None):
   if volume is not None:
     PState[:3]=listval(volume)
   try:
-    f=file("iPod_Control/iTunes/iTunesPState","wb")
+    f=open("iPod_Control/iTunes/iTunesPState","wb")
     array.array('B',PState).tofile(f)
     f.close()
   except IOError:
@@ -430,8 +400,8 @@ def make_playback_state(volume=None):
 def make_stats(count):
   log("Creating statistics file ...",False)
   try:
-    file("iPod_Control/iTunes/iTunesStats","wb").write(\
-         stringval(count)+"\0"*3+(stringval(18)+"\xff"*3+"\0"*12)*count)
+    string=stringval(count)+"\0"*3+(stringval(18)+"\xff"*3+"\0"*12)*count
+    open("iPod_Control/iTunes/iTunesStats","wb").write(string.encode('ISO-8859-1'))
   except IOError:
     log("FAILED.")
     return 0
@@ -491,7 +461,8 @@ def make_shuffle(count):
     seq=list(range(count))
     random.shuffle(seq)
   try:
-    file("iPod_Control/iTunes/iTunesShuffle","wb").write("".join(map(stringval,seq)))
+    string="".join(map(stringval,seq))
+    open("iPod_Control/iTunes/iTunesShuffle","wb").write(string.encode('ISO-8859-1'))
   except IOError:
     log("FAILED.")
     return 0
@@ -508,7 +479,7 @@ def main(dirs):
   log()
 
   try:
-    f=file("rebuild_db.rules","r")
+    f=open("rebuild_db.rules","r")
     Rules+=[_f for _f in map(ParseRuleLine,f.read().split("\n")) if _f]
     f.close()
   except IOError:
@@ -524,13 +495,13 @@ Please make sure that:
   header=array.array('B')
   iTunesSD=None
   try:
-    iTunesSD=file("iPod_Control/iTunes/iTunesSD","rb")
+    iTunesSD=open("iPod_Control/iTunes/iTunesSD","rb")
     header.fromfile(iTunesSD,51)
     if Options['reuse']:
       iTunesSD.seek(18)
       entry=iTunesSD.read(558)
       while len(entry)==558:
-        filename=entry[33::2].split("\0",1)[0]
+        filename=entry[33::2].split(b"\0",1)[0]
         KnownEntries[filename]=entry
         entry=iTunesSD.read(558)
   except (IOError,EOFError):
@@ -554,7 +525,7 @@ Please make sure that:
 
   log()
   try:
-    iTunesSD=file("iPod_Control/iTunes/iTunesSD","wb")
+    iTunesSD=open("iPod_Control/iTunes/iTunesSD","wb")
     header[:18].tofile(iTunesSD)
   except IOError:
     log("""ERROR: Cannot write to the iPod database file (iTunesSD)!
@@ -575,7 +546,10 @@ Please make sure that:
     log()
     log("Fixing iTunesSD header.")
     iTunesSD.seek(0)
-    iTunesSD.write("\0%c%c"%(total_count>>8,total_count&0xFF))
+    a=total_count>>8
+    b=total_count&0xFF
+    string="\0{0}{1}".format(a, b)
+    iTunesSD.write(string.encode('ISO-8859-1'))
     iTunesSD.close()
   except IOError:
     log("ERROR: Some strange errors occured while writing iTunesSD.")
